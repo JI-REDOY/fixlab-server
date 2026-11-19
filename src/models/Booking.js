@@ -17,6 +17,8 @@ const bookingSchema = new mongoose.Schema({
   status: { type: String, enum: ['requested', 'accepted', 'rejected', 'in-progress', 'completed', 'cancelled'], default: 'requested' },
   finalAmount: { type: Number },
   paymentStatus: { type: String, enum: ['unpaid', 'paid'], default: 'unpaid' },
+  rating: { type: Number, min: 1, max: 5 },
+  review: { type: String },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Booking', bookingSchema);
