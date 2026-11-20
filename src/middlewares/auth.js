@@ -9,7 +9,7 @@ const verifyToken = (req, res, next) => {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // { email, role, name }
+    req.user = decoded; // { email, role, roleConfirmed, name }
     next();
   } catch (error) {
     return res.status(401).json({ message: 'Unauthorized: Invalid token' });
@@ -17,6 +17,9 @@ const verifyToken = (req, res, next) => {
 };
 
 const verifyCustomer = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized: User not authenticated' });
+  }
   if (req.user.role !== 'customer') {
     return res.status(403).json({ message: 'Forbidden: Customer access only' });
   }
@@ -24,6 +27,9 @@ const verifyCustomer = (req, res, next) => {
 };
 
 const verifyTechnician = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized: User not authenticated' });
+  }
   if (req.user.role !== 'technician') {
     return res.status(403).json({ message: 'Forbidden: Technician access only' });
   }
@@ -31,6 +37,9 @@ const verifyTechnician = (req, res, next) => {
 };
 
 const verifyAdmin = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized: User not authenticated' });
+  }
   if (req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Forbidden: Admin access only' });
   }
