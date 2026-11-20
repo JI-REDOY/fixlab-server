@@ -15,12 +15,14 @@ const serviceRoutes = require('./routes/serviceRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const publicRoutes = require('./routes/publicRoutes'); // <-- নতুন রাউট যোগ করা হলো
 
 app.use('/api/auth', authRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/public', publicRoutes); // <-- নতুন রাউট কানেক্ট করা হলো
 
 // Database Connection
 mongoose.connect(process.env.MONGODB_URI)

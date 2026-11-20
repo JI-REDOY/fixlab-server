@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const mongoose = require('mongoose');
 
 router.post('/jwt', async (req, res) => {
   try {
@@ -11,15 +11,12 @@ router.post('/jwt', async (req, res) => {
       return res.status(400).json({ message: 'Email is required' });
     }
 
-    // BetterAuth-এর ডিফল্ট কালেকশন হলো 'user' (সিঙ্গুলার)।
-    // Mongoose-এ আমরা 'User' মডেল বানিয়েছি যা 'users' কালেকশনে খুঁজবে।
-    // তাই সরাসরি mongoose.connection.db.collection('user') ব্যবহার করা ভালো।
-    
-    const db = require('mongoose').connection.db;
+    // BetterAuth-এর ডিফল্ট কালেকশন হলো 'user' (সিঙ্গুলার)
+    const db = mongoose.connection.db;
     const user = await db.collection('user').findOne({ email });
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: 'User not found in database' });
     }
 
     const payload = {
