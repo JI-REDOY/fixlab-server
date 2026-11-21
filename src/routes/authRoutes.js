@@ -74,11 +74,6 @@ router.get("/me", verifyToken, async (req, res) => {
         phone: user.phone || "",
         area: user.area || "",
         bio: user.bio || "",
-        plan: user.plan || "free",
-        isVerifiedPro: Boolean(user.isVerifiedPro),
-        proPlanId: user.proPlanId || null,
-        proUpgradedAt: user.proUpgradedAt || null,
-        proExpiresAt: user.proExpiresAt || null,
       },
     });
   } catch (error) {
