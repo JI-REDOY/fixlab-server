@@ -2,7 +2,14 @@ const mongoose = require('mongoose');
 
 const paymentSchema = new mongoose.Schema(
   {
-    bookingId: { type: String, required: true },
+    type: { type: String, enum: ['booking', 'subscription'], default: 'booking' },
+    planId: { type: String, default: null },
+    bookingId: {
+      type: String,
+      required: function () {
+        return this.type === 'booking';
+      },
+    },
     serviceTitle: { type: String },
     customerName: { type: String },
     customerEmail: { type: String },

@@ -100,12 +100,16 @@ const getAdminStats = async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();
     const totalTechnicians = await User.countDocuments({ role: "technician" });
+    const proTechnicians = await User.countDocuments({
+      role: "technician",
+      plan: "pro",
+    });
     const pendingServices = await Service.countDocuments({
       approvalStatus: "pending",
     });
     res
       .status(200)
-      .json({ totalUsers, totalTechnicians, pendingServices });
+      .json({ totalUsers, totalTechnicians, proTechnicians, pendingServices });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

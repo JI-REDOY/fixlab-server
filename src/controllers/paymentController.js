@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const Booking = require("../models/Booking");
 const Payment = require("../models/Payment");
+const User = require("../models/User");
 
 let legacyIndexDropped = false;
 
@@ -14,6 +15,21 @@ const ensureLegacySessionIndexDropped = async () => {
   } finally {
     legacyIndexDropped = true;
   }
+};
+
+const PRO_PLANS = {
+  pro_monthly: {
+    title: "FixLab Pro Monthly",
+    amount: 1900,
+    billingCycle: "monthly",
+    durationDays: 30,
+  },
+  pro_yearly: {
+    title: "FixLab Pro Yearly",
+    amount: 14900,
+    billingCycle: "yearly",
+    durationDays: 365,
+  },
 };
 
 const createPaymentIntent = async (req, res) => {
@@ -128,6 +144,7 @@ const confirmCardPayment = async (req, res) => {
 
     if (!existingPayment) {
       const payment = new Payment({
+        type: "booking",
         bookingId: booking._id.toString(),
         serviceTitle:
           booking.serviceTitle ||
@@ -252,6 +269,7 @@ const verifyPayment = async (req, res) => {
 
     if (!existingPayment) {
       const payment = new Payment({
+        type: "booking",
         bookingId: booking._id.toString(),
         serviceTitle: booking.serviceTitle,
         customerName: booking.customerName,
@@ -293,10 +311,149 @@ const getCustomerPayments = async (req, res) => {
   }
 };
 
+const createSubscriptionCheckout = async (req, res) => {
+  try {
+    const { planId } = req.body;
+    const selected = PRO_PLANS[planId];
+
+    if (!selected) {
+      return res.status(400).json({ message: "Invalid pro plan selected" });
+    }
+
+    const technicianEmail = req.user.email;
+    const technicianName = req.user.name || "Technician";
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: selected.amount,
+      currency: "usd",
+      automatic_payment_methods: { enabled: true },
+      receipt_email: technicianEmail,
+      description: `${selected.title} - Unlimited services & Verified Pro badge`,
+      metadata: {
+        type: "subscription",
+        planId,
+        billingCycle: selected.billingCycle,
+        durationDays: String(selected.durationDays),
+        technicianName,
+        technicianEmail,
+      },
+    });
+
+    res.status(200).json({
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      amount: selected.amount / 100,
+      planId,
+      durationDays: selected.durationDays,
+      customerName: technicianName,
+      customerEmail: technicianEmail,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const verifySubscriptionPayment = async (req, res) => {
+  try {
+    const paymentIntentId =
+      req.body.paymentIntentId || req.body.sessionId || req.query.payment_intent;
+
+    if (!paymentIntentId) {
+      return res
+        .status(400)
+        .json({ message: "paymentIntentId is required" });
+    }
+
+    const intent = await stripe.paymentIntents.retrieve(paymentIntentId, {
+      expand: ["latest_charge"],
+    });
+
+    if (intent.status !== "succeeded") {
+      return res
+        .status(400)
+        .json({ message: `Payment not completed (${intent.status})` });
+    }
+
+    const billingDetails = intent.latest_charge?.billing_details || {};
+    const technicianEmail =
+      req.body.billingEmail ||
+      billingDetails.email ||
+      intent.metadata?.technicianEmail ||
+      req.user.email;
+    const technicianName =
+      req.body.billingName ||
+      billingDetails.name ||
+      intent.metadata?.technicianName ||
+      req.user.name ||
+      "Technician";
+    const planId =
+      req.body.planId || intent.metadata?.planId || "pro_monthly";
+
+    const planConfig = PRO_PLANS[planId] || PRO_PLANS.pro_monthly;
+    const now = new Date();
+    const proExpiresAt = new Date(
+      now.getTime() + planConfig.durationDays * 24 * 60 * 60 * 1000
+    );
+
+    await ensureLegacySessionIndexDropped();
+
+    const existingPayment = await Payment.findOne({
+      $or: [
+        { transactionId: intent.id },
+        { stripePaymentIntentId: intent.id },
+      ],
+    });
+
+    if (!existingPayment) {
+      await Payment.create({
+        type: "subscription",
+        planId,
+        serviceTitle: planConfig.title,
+        technicianName,
+        technicianEmail,
+        amount: (intent.amount || 0) / 100,
+        currency: intent.currency || "usd",
+        transactionId: intent.id,
+        stripePaymentIntentId: intent.id,
+        paymentStatus: "paid",
+        paidAt: now,
+      });
+    }
+
+    const updatedUser = await User.findOneAndUpdate(
+      { email: technicianEmail },
+      {
+        $set: {
+          plan: "pro",
+          isVerifiedPro: true,
+          proPlanId: planId,
+          proUpgradedAt: now,
+          proExpiresAt,
+        },
+      },
+      { new: true }
+    );
+
+    res.status(200).json({
+      message: "Subscription verified and upgraded to Pro",
+      plan: updatedUser?.plan || "pro",
+      isVerifiedPro: updatedUser?.isVerifiedPro ?? true,
+      proPlanId: updatedUser?.proPlanId || planId,
+      proUpgradedAt: updatedUser?.proUpgradedAt || now,
+      proExpiresAt: updatedUser?.proExpiresAt || proExpiresAt,
+      transactionId: intent.id,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   createPaymentIntent,
   confirmCardPayment,
   createCheckoutSession,
   verifyPayment,
   getCustomerPayments,
+  createSubscriptionCheckout,
+  verifySubscriptionPayment,
 };

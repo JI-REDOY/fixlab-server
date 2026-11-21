@@ -1,7 +1,59 @@
 const mongoose = require("mongoose");
 const Service = require("../models/Service");
+const User = require("../models/User");
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+const attachProStatusToServices = async (services) => {
+  const list = Array.isArray(services) ? services : [services];
+  const emails = [
+    ...new Set(
+      list
+        .map((s) => (s?.technicianEmail || "").trim().toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
+
+  const usersMap = new Map();
+  if (emails.length > 0) {
+    const users = await User.find(
+      { email: { $in: emails } },
+      "email plan isVerifiedPro proPlanId proUpgradedAt proExpiresAt"
+    ).lean();
+
+    for (const u of users) {
+      if (u?.email) {
+        usersMap.set(u.email.trim().toLowerCase(), u);
+      }
+    }
+  }
+
+  const now = Date.now();
+  const enriched = list.map((item) => {
+    const plain = typeof item?.toObject === "function" ? item.toObject() : { ...item };
+    const emailKey = (plain?.technicianEmail || "").trim().toLowerCase();
+    const techUser = usersMap.get(emailKey);
+
+    const rawPro = Boolean(techUser?.plan === "pro" || techUser?.isVerifiedPro);
+    const expiresAt = techUser?.proExpiresAt || null;
+    const expiryMs = expiresAt ? new Date(expiresAt).getTime() : null;
+    const isNotExpired = expiryMs && !Number.isNaN(expiryMs) ? expiryMs > now : true;
+    const isProActive = rawPro && isNotExpired;
+
+    return {
+      ...plain,
+      plan: isProActive ? "pro" : "free",
+      technicianPlan: isProActive ? "pro" : "free",
+      isVerifiedPro: isProActive,
+      technicianIsVerifiedPro: isProActive,
+      proPlanId: isProActive ? techUser?.proPlanId || null : null,
+      proExpiresAt: expiresAt,
+      technicianProExpiresAt: expiresAt,
+    };
+  });
+
+  return Array.isArray(services) ? enriched : enriched[0];
+};
 
 // Create a new service (Technician only)
 const createService = async (req, res) => {
@@ -37,6 +89,28 @@ const createService = async (req, res) => {
         .json({ message: "Base price must be a positive number" });
     }
 
+    const techUser = await User.findOne({ email: req.user.email });
+    const rawPro = Boolean(techUser?.plan === "pro" || techUser?.isVerifiedPro);
+    const expiryMs = techUser?.proExpiresAt
+      ? new Date(techUser.proExpiresAt).getTime()
+      : null;
+    const isProActive =
+      rawPro && (!expiryMs || Number.isNaN(expiryMs) || expiryMs > Date.now());
+
+    if (!isProActive) {
+      const existingServiceCount = await Service.countDocuments({
+        technicianEmail: req.user.email,
+      });
+
+      if (existingServiceCount >= 3) {
+        return res.status(403).json({
+          message:
+            "Free plan allows up to 3 services only. Upgrade to Pro for unlimited services.",
+          code: "FREE_PLAN_SERVICE_LIMIT_REACHED",
+        });
+      }
+    }
+
     const newService = new Service({
       title: String(title).trim(),
       category: String(category).trim(),
@@ -53,9 +127,11 @@ const createService = async (req, res) => {
     });
 
     await newService.save();
-    res
-      .status(201)
-      .json({ message: "Service created successfully", service: newService });
+    const enrichedService = await attachProStatusToServices(newService);
+    res.status(201).json({
+      message: "Service created successfully",
+      service: enrichedService,
+    });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -88,7 +164,8 @@ const getPublicServices = async (req, res) => {
     if (sort === "price-high") sortOption = { basePrice: -1 };
 
     const services = await Service.find(query).sort(sortOption);
-    res.status(200).json(services);
+    const enrichedServices = await attachProStatusToServices(services);
+    res.status(200).json(enrichedServices);
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -100,7 +177,8 @@ const getTechnicianServices = async (req, res) => {
     const services = await Service.find({
       technicianEmail: req.user.email,
     }).sort({ createdAt: -1 });
-    res.status(200).json(services);
+    const enrichedServices = await attachProStatusToServices(services);
+    res.status(200).json(enrichedServices);
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -179,9 +257,11 @@ const updateService = async (req, res) => {
       { new: true }
     );
 
-    res
-      .status(200)
-      .json({ message: "Service updated successfully", service: updatedService });
+    const enrichedService = await attachProStatusToServices(updatedService);
+    res.status(200).json({
+      message: "Service updated successfully",
+      service: enrichedService,
+    });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -218,7 +298,8 @@ const getFeaturedServices = async (req, res) => {
     })
       .sort({ createdAt: -1 })
       .limit(6);
-    res.status(200).json(services);
+    const enrichedServices = await attachProStatusToServices(services);
+    res.status(200).json(enrichedServices);
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -240,7 +321,8 @@ const getServiceById = async (req, res) => {
       return res.status(404).json({ message: "Service not found" });
     }
 
-    res.status(200).json(service);
+    const enrichedService = await attachProStatusToServices(service);
+    res.status(200).json(enrichedService);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

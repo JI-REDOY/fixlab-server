@@ -45,6 +45,8 @@ const verifyToken = async (req, res, next) => {
         typeof dbUser?.roleConfirmed === "boolean"
           ? dbUser.roleConfirmed
           : Boolean(decoded?.roleConfirmed),
+      plan: dbUser?.plan === "pro" ? "pro" : "free",
+      isVerifiedPro: Boolean(dbUser?.isVerifiedPro),
     };
 
     next();
