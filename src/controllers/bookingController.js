@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Booking = require("../models/Booking");
 const Service = require("../models/Service");
+const User = require("../models/User");
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
@@ -281,8 +282,19 @@ const addReview = async (req, res) => {
         .json({ message: "Can only review paid bookings" });
     }
 
+    let customerImg = req.user.image || "";
+    if (!customerImg && booking.customerEmail) {
+      const customerDoc = await User.findOne({
+        email: booking.customerEmail,
+      }).select("image");
+      customerImg = customerDoc?.image || "";
+    }
+
     booking.rating = numericRating;
     booking.review = typeof review === "string" ? review.trim() : "";
+    if (customerImg) {
+      booking.customerImage = customerImg;
+    }
     await booking.save();
 
     res.status(200).json({ message: "Review added successfully", booking });

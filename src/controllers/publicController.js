@@ -38,12 +38,35 @@ const getPublicReviews = async (req, res) => {
       .sort({ updatedAt: -1 })
       .limit(10);
 
-    const formattedReviews = reviews.map((r) => ({
-      text: r.review,
-      author: r.customerName,
-      role: "Customer",
-      icon: "Star",
-    }));
+    const emails = [
+      ...new Set(
+        reviews
+          .map((r) => String(r.customerEmail || "").trim().toLowerCase())
+          .filter(Boolean)
+      ),
+    ];
+
+    const users = emails.length
+      ? await User.find({ email: { $in: emails } }).select("email image")
+      : [];
+
+    const userImageMap = new Map(
+      users.map((u) => [String(u.email || "").trim().toLowerCase(), u.image || ""])
+    );
+
+    const formattedReviews = reviews.map((r) => {
+      const emailKey = String(r.customerEmail || "").trim().toLowerCase();
+      const customerImg = r.customerImage || userImageMap.get(emailKey) || "";
+
+      return {
+        text: r.review,
+        author: r.customerName || "Verified Customer",
+        role: "Customer",
+        rating: r.rating ?? 5.0,
+        image: customerImg,
+        icon: "Star",
+      };
+    });
 
     res.status(200).json(formattedReviews);
   } catch (error) {
