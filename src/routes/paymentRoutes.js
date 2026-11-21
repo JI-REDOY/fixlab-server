@@ -6,8 +6,6 @@ const {
   createCheckoutSession,
   verifyPayment,
   getCustomerPayments,
-  createSubscriptionCheckout,
-  verifySubscriptionPayment,
 } = require("../controllers/paymentController");
 const { verifyToken, verifyCustomer } = require("../middlewares/auth");
 
@@ -21,8 +19,5 @@ router.post(
 );
 router.get("/verify", verifyToken, verifyCustomer, verifyPayment);
 router.get("/my-payments", verifyToken, verifyCustomer, getCustomerPayments);
-
-router.post("/subscription/checkout", verifyToken, createSubscriptionCheckout);
-router.post("/subscription/verify", verifyToken, verifySubscriptionPayment);
 
 module.exports = router;
