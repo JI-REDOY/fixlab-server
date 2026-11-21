@@ -1,61 +1,66 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
-const { verifyToken } = require('../middlewares/auth');
+const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
+const { verifyToken } = require("../middlewares/auth");
 
-router.post('/jwt', async (req, res) => {
+const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+
+router.post("/jwt", async (req, res) => {
   try {
-    const { email } = req.body;
+    const email = normalizeEmail(req.body?.email);
 
     if (!email) {
-      return res.status(400).json({ message: 'Email is required' });
+      return res.status(400).json({ message: "Email is required" });
     }
 
-    // BetterAuth-এর ডিফল্ট কালেকশন হলো 'user' (সিঙ্গুলার)
+    if (!process.env.JWT_SECRET) {
+      return res
+        .status(500)
+        .json({ message: "Server configuration error: JWT_SECRET missing" });
+    }
+
     const db = mongoose.connection.db;
-    const user = await db.collection('user').findOne({ email });
+    const user = await db.collection("user").findOne({ email });
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found in database' });
+      return res.status(404).json({ message: "User not found in database" });
     }
 
-    // আগে থেকে তৈরি বা অ্যাডমিন ইউজারের ক্ষেত্রে roleConfirmed undefined থাকলে false ধরি;
-    // নতুন Google ইউজার role সিলেক্ট করলে roleConfirmed: true হয়ে যাবে।
     const roleConfirmed = Boolean(user.roleConfirmed);
+    const role = user.role || "customer";
 
     const payload = {
       email: user.email,
-      role: user.role || 'customer',
+      role,
       roleConfirmed,
       name: user.name,
     };
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
     res.status(200).json({
       token,
       user: {
         email: user.email,
-        role: user.role || 'customer',
+        role,
         roleConfirmed,
         name: user.name,
       },
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
-router.get('/me', verifyToken, async (req, res) => {
+router.get("/me", verifyToken, async (req, res) => {
   try {
+    const email = normalizeEmail(req.user?.email);
     const db = mongoose.connection.db;
-    const user = await db
-      .collection('user')
-      .findOne({ email: req.user.email });
+    const user = await db.collection("user").findOne({ email });
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
 
     res.status(200).json({
@@ -64,44 +69,52 @@ router.get('/me', verifyToken, async (req, res) => {
         name: user.name,
         email: user.email,
         image: user.image || null,
-        role: user.role || 'customer',
+        role: user.role || "customer",
         roleConfirmed: Boolean(user.roleConfirmed),
+        phone: user.phone || "",
+        area: user.area || "",
+        bio: user.bio || "",
       },
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
-router.patch('/role', verifyToken, async (req, res) => {
+router.patch("/role", verifyToken, async (req, res) => {
   try {
     const { role } = req.body;
-    const allowedRoles = ['customer', 'technician'];
+    const allowedRoles = ["customer", "technician"];
 
     if (!role || !allowedRoles.includes(role)) {
       return res.status(400).json({
-        message: 'Invalid role. Choose either customer or technician.',
+        message: "Invalid role. Choose either customer or technician.",
       });
     }
 
+    if (!process.env.JWT_SECRET) {
+      return res
+        .status(500)
+        .json({ message: "Server configuration error: JWT_SECRET missing" });
+    }
+
+    const email = normalizeEmail(req.user?.email);
     const db = mongoose.connection.db;
-    const existingUser = await db
-      .collection('user')
-      .findOne({ email: req.user.email });
+    const existingUser = await db.collection("user").findOne({ email });
 
     if (!existingUser) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    if (existingUser.role === 'admin') {
+    if (existingUser.role === "admin") {
       return res.status(403).json({
-        message: 'Admin role cannot be changed through self-selection.',
+        message: "Admin role cannot be changed through self-selection.",
       });
     }
 
-    await db.collection('user').updateOne(
-      { email: req.user.email },
+    await db.collection("user").updateOne(
+      { email },
       {
         $set: {
           role,
@@ -119,7 +132,7 @@ router.patch('/role', verifyToken, async (req, res) => {
     };
 
     const token = jwt.sign(updatedPayload, process.env.JWT_SECRET, {
-      expiresIn: '7d',
+      expiresIn: "7d",
     });
 
     res.status(200).json({
@@ -130,7 +143,7 @@ router.patch('/role', verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
