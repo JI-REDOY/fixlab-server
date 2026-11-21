@@ -22,13 +22,11 @@ const PRO_PLANS = {
     title: "FixLab Pro Monthly",
     amount: 1900,
     billingCycle: "monthly",
-    durationDays: 30,
   },
   pro_yearly: {
     title: "FixLab Pro Yearly",
     amount: 14900,
     billingCycle: "yearly",
-    durationDays: 365,
   },
 };
 
@@ -333,7 +331,6 @@ const createSubscriptionCheckout = async (req, res) => {
         type: "subscription",
         planId,
         billingCycle: selected.billingCycle,
-        durationDays: String(selected.durationDays),
         technicianName,
         technicianEmail,
       },
@@ -344,7 +341,6 @@ const createSubscriptionCheckout = async (req, res) => {
       paymentIntentId: paymentIntent.id,
       amount: selected.amount / 100,
       planId,
-      durationDays: selected.durationDays,
       customerName: technicianName,
       customerEmail: technicianEmail,
     });
@@ -389,12 +385,6 @@ const verifySubscriptionPayment = async (req, res) => {
     const planId =
       req.body.planId || intent.metadata?.planId || "pro_monthly";
 
-    const planConfig = PRO_PLANS[planId] || PRO_PLANS.pro_monthly;
-    const now = new Date();
-    const proExpiresAt = new Date(
-      now.getTime() + planConfig.durationDays * 24 * 60 * 60 * 1000
-    );
-
     await ensureLegacySessionIndexDropped();
 
     const existingPayment = await Payment.findOne({
@@ -408,7 +398,8 @@ const verifySubscriptionPayment = async (req, res) => {
       await Payment.create({
         type: "subscription",
         planId,
-        serviceTitle: planConfig.title,
+        serviceTitle:
+          planId === "pro_yearly" ? "FixLab Pro Yearly" : "FixLab Pro Monthly",
         technicianName,
         technicianEmail,
         amount: (intent.amount || 0) / 100,
@@ -416,7 +407,7 @@ const verifySubscriptionPayment = async (req, res) => {
         transactionId: intent.id,
         stripePaymentIntentId: intent.id,
         paymentStatus: "paid",
-        paidAt: now,
+        paidAt: new Date(),
       });
     }
 
@@ -427,8 +418,7 @@ const verifySubscriptionPayment = async (req, res) => {
           plan: "pro",
           isVerifiedPro: true,
           proPlanId: planId,
-          proUpgradedAt: now,
-          proExpiresAt,
+          proUpgradedAt: new Date(),
         },
       },
       { new: true }
@@ -438,9 +428,6 @@ const verifySubscriptionPayment = async (req, res) => {
       message: "Subscription verified and upgraded to Pro",
       plan: updatedUser?.plan || "pro",
       isVerifiedPro: updatedUser?.isVerifiedPro ?? true,
-      proPlanId: updatedUser?.proPlanId || planId,
-      proUpgradedAt: updatedUser?.proUpgradedAt || now,
-      proExpiresAt: updatedUser?.proExpiresAt || proExpiresAt,
       transactionId: intent.id,
     });
   } catch (error) {
